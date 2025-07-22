@@ -9,7 +9,7 @@ Utiliza un gestor de contexto (`with`) para una gestión limpia de la sesión.
 Requisitos:
     - requests: Para realizar llamadas HTTP a la API de Wialon.
     - python-dotenv: Para cargar variables de entorno desde un archivo .env.
-    - covi_logger: Para un sistema de logging centralizado.
+    - logging (estándar de Python): Para registrar eventos.
 
 Uso (como módulo con gestor de contexto):
     from wialon_api_client import WialonClient, WialonAPIError
@@ -60,14 +60,17 @@ import argparse
 import os
 from dotenv import load_dotenv
 from pathlib import Path
-from logging import getLogger
+import logging
+
+# --- Configuración básica del logging estándar ---
+# Configura el logger para mostrar mensajes INFO y superiores en la consola.
+# El formato incluye la hora, el nombre del logger, el nivel y el mensaje.
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
 
 # Cargar variables de entorno desde el archivo .env
 load_dotenv(dotenv_path=Path(__file__).resolve().parents[1] / '.env')
-
-# Inicializar el logger al inicio del módulo
-logger = getLogger(__name__)
-
 
 # --- Clases de Excepción Personalizadas ---
 class WialonAPIError(Exception):
@@ -130,7 +133,7 @@ class WialonClient:
 
         try:
             logger.debug(f"Realizando llamada a Wialon API: {service} con params: {params}")
-            response = requests.get(self.base_url, params=full_params)
+            response = requests.get(self.base_url, params=full_params) # Usar self.base_url
             response.raise_for_status() # Lanza una excepción para errores HTTP (4xx o 5xx)
             data = response.json()
 
@@ -183,11 +186,21 @@ class WialonClient:
                 self._sid = None
                 logger.info("Sesión cerrada exitosamente.")
             except WialonAPIError as e:
-                logger.warning(f"Advertencia al cerrar sesión: {e}")
+                # Extraer el código de error para manejar el "API Error 0" específicamente
+                error_code_str = str(e).split(':')[0].replace('API Error ', '')
+                try:
+                    error_code = int(error_code_str)
+                except ValueError:
+                    error_code = -1 # Código desconocido
+
+                if error_code == 0: # API Error 0: Error genérico, a menudo benigno al cerrar sesión
+                    logger.debug(f"Sesión ya invalidada o error genérico al cerrar sesión (código 0): {e}")
+                else:
+                    logger.warning(f"Advertencia al cerrar sesión: {e}")
             except Exception as e:
                 logger.error(f"Error inesperado al intentar cerrar sesión: {e}")
         else:
-            logger.debug("No hay sesión activa para cerrar.") # Usar debug para evitar spam
+            logger.debug("No hay sesión activa para cerrar.")
 
     def ensure_sid(self):
         """Asegura que hay un SID válido. Si no lo hay, intenta iniciar sesión."""
@@ -201,7 +214,7 @@ class WialonClient:
         Retorna una lista de diccionarios con 'nombre' e 'id'.
         """
         self.ensure_sid() 
-        logger.info(f"Buscando unidades con máscara: '{unit_name_mask}'")
+        logger.debug(f"Buscando unidades con máscara: '{unit_name_mask}'")
 
         params_search = {
             "spec": {
@@ -219,7 +232,7 @@ class WialonClient:
 
         if "items" in data:
             unidades = [{"nombre": item["nm"], "id": item["id"]} for item in data["items"]]
-            logger.info(f"Se encontraron {len(unidades)} unidades.")
+            logger.debug(f"Se encontraron {len(unidades)} unidades.")
             return unidades
         else:
             logger.error("Respuesta inesperada al buscar unidades: 'items' no encontrado.")
@@ -231,7 +244,7 @@ class WialonClient:
         Retorna el kilometraje como un número flotante o None si no está disponible.
         """
         self.ensure_sid() 
-        logger.info(f"Obteniendo kilometraje para ID: {item_id}")
+        logger.debug(f"Obteniendo kilometraje para ID: {item_id}")
 
         params_get_item = {
             "id": item_id,
@@ -241,7 +254,7 @@ class WialonClient:
 
         if "item" in data and "cnm_km" in data["item"]:
             kilometraje_api = data["item"]["cnm_km"]
-            logger.info(f"  Kilometraje obtenido: {kilometraje_api} km")
+            logger.debug(f"  Kilometraje obtenido: {kilometraje_api} km")
             return float(kilometraje_api)
         else:
             logger.warning(f"  No se encontró 'cnm_km' para el ID {item_id}. Respuesta: {data.get('item', 'N/A')}")
@@ -281,18 +294,24 @@ if __name__ == "__main__":
 
             if not todas_mis_unidades:
                 logger.warning("No se encontraron unidades o hubo un error al obtenerlas.")
-                exit(1)
+                # No salir aquí, porque si no hay unidades, no es un error fatal para el programa,
+                # simplemente no hay nada que procesar.
+                # exit(1) # Eliminado para permitir que el programa termine normalmente
 
             logger.info("\n--- Obteniendo kilometraje de cada unidad ---")
 
-            for unidad in todas_mis_unidades:
-                logger.info(f"\nProcesando unidad: {unidad['nombre']} (ID: {unidad['id']})")
-                kilometraje = client.get_unit_mileage(unidad['id'])
+            # Solo intentar procesar si se encontraron unidades
+            if todas_mis_unidades:
+                for unidad in todas_mis_unidades:
+                    logger.info(f"\nProcesando unidad: {unidad['nombre']} (ID: {unidad['id']})")
+                    kilometraje = client.get_unit_mileage(unidad['id'])
 
-                if kilometraje is not None:
-                    logger.info(f"  Kilometraje actual: {kilometraje} km")
-                else:
-                    logger.warning(f"  No se pudo obtener el kilometraje para esta unidad.")
+                    if kilometraje is not None:
+                        logger.info(f"  Kilometraje actual: {kilometraje} km")
+                    else:
+                        logger.warning(f"  No se pudo obtener el kilometraje para esta unidad.")
+            else:
+                logger.info("No hay unidades para procesar.") # Mensaje si no se encontraron unidades
 
     except WialonAuthError as e:
         logger.error(f"Error de autenticación con Wialon: {e}")
@@ -309,4 +328,3 @@ if __name__ == "__main__":
     except Exception as e:
         logger.critical(f"Ocurrió un error inesperado y crítico: {e}", exc_info=True) # exc_info=True para traceback
         exit(1)
-
