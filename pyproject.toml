@@ -22,6 +22,6 @@ dependencies = [
 ]
 
 [project.urls]
-"Homepage" = "[https://juanantoniocobo.com](https://juanantoniocobo.com)" # Tu web como homepage
-"GitHub" = "[https://github.com/Covi/wialon_api_client](https://github.com/Covi/wialon_api_client)" # Enlace directo al repo
-"Bug Tracker" = "[https://github.com/Covi/wialon_api_client/issues](https://github.com/Covi/wialon_api_client/issues)"
+"Homepage" = "https://juanantoniocobo.com"
+"GitHub" = "https://github.com/Covi/wialon_api_client"
+"Bug Tracker" = "https://github.com/Covi/wialon_api_client/issues"
