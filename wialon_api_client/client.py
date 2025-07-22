@@ -60,13 +60,13 @@ import argparse
 import os
 from dotenv import load_dotenv
 from pathlib import Path
-from covi_logger import get_logger
+from logging import getLogger
 
 # Cargar variables de entorno desde el archivo .env
 load_dotenv(dotenv_path=Path(__file__).resolve().parents[1] / '.env')
 
 # Inicializar el logger al inicio del módulo
-logger = get_logger(__name__)
+logger = getLogger(__name__)
 
 
 # --- Clases de Excepción Personalizadas ---
