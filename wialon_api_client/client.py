@@ -57,10 +57,17 @@ import requests
 import json
 import argparse
 import os
+from dotenv import load_dotenv
+from pathlib import Path
 
 # --- Configuración global ---
-# URL base para todas las llamadas a la API de Wialon
-BASE_URL = "https://hst-api.wialon.com/wialon/ajax.html"
+# Cargar variables de entorno desde el archivo .env
+# Se especifica la ruta al archivo .env que está en el directorio padre del script.
+# Esto es crucial cuando el script se ejecuta desde un subdirectorio.
+load_dotenv(dotenv_path=Path(__file__).resolve().parents[1] / '.env')
+
+WIALON_TOKEN = os.getenv("WIALON_TOKEN")
+BASE_URL = os.getenv("BASE_URL")
 
 # --- Clases de Excepción Personalizadas ---
 class WialonAPIError(Exception):
@@ -234,10 +241,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # Obtener el token de las variables de entorno (ahora cargadas desde .env)
-    wialon_token = os.getenv("WIALON_TOKEN")
-
-    if not wialon_token:
+    if not WIALON_TOKEN:
         print("Error: La variable de entorno 'WIALON_TOKEN' no está configurada.")
         print("Por favor, establece tu token de Wialon así:")
         print("  En Linux/macOS: export WIALON_TOKEN='TU_TOKEN_AQUI'")
@@ -247,7 +251,7 @@ if __name__ == "__main__":
 
     try:
         # Crear una instancia del cliente Wialon
-        client = WialonClient(wialon_token)
+        client = WialonClient(WIALON_TOKEN)
 
         nombre_unidad_mask = f"*{args.mat}*" if args.mat else "*"
         
@@ -266,8 +270,6 @@ if __name__ == "__main__":
             
             if kilometraje is not None:
                 print(f"  Kilometraje actual: {kilometraje} km")
-                # Aquí integrarías la actualización a tu base de datos
-                # Por ejemplo: guardar_en_db(unidad['id'], kilometraje)
             else:
                 print(f"  No se pudo obtener el kilometraje para esta unidad.")
 
