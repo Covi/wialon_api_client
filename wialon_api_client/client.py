@@ -243,10 +243,7 @@ if __name__ == "__main__":
 
     if not WIALON_TOKEN:
         print("Error: La variable de entorno 'WIALON_TOKEN' no está configurada.")
-        print("Por favor, establece tu token de Wialon así:")
-        print("  En Linux/macOS: export WIALON_TOKEN='TU_TOKEN_AQUI'")
-        print("  En Windows (CMD): set WIALON_TOKEN='TU_TOKEN_AQUI'")
-        print("  En Windows (PowerShell): $env:WIALON_TOKEN='TU_TOKEN_AQUI'")
+        print("Por favor, establece tu token de Wialon a través de la variable de entorno 'WIALON_TOKEN'.")
         exit(1)
 
     try:
@@ -267,7 +264,7 @@ if __name__ == "__main__":
         for unidad in todas_mis_unidades:
             print(f"\nProcesando unidad: {unidad['nombre']} (ID: {unidad['id']})")
             kilometraje = client.get_unit_mileage(unidad['id'])
-            
+
             if kilometraje is not None:
                 print(f"  Kilometraje actual: {kilometraje} km")
             else:
