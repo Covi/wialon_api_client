@@ -1,53 +1,54 @@
-# wialon_client.py
+# wialon_api_client/client.py
 """
 Módulo Python para interactuar con la API de Wialon.
 
 Este módulo proporciona una clase `WialonClient` para gestionar la autenticación
 y realizar operaciones comunes como obtener listas de unidades y su kilometraje.
+Utiliza un gestor de contexto (`with`) para una gestión limpia de la sesión.
 
 Requisitos:
     - requests: Para realizar llamadas HTTP a la API de Wialon.
+    - python-dotenv: Para cargar variables de entorno desde un archivo .env.
+    - covi_logger: Para un sistema de logging centralizado.
 
-Uso (como módulo):
-    from wialon_client import WialonClient, WialonAPIError
+Uso (como módulo con gestor de contexto):
+    from wialon_api_client import WialonClient, WialonAPIError
     import os
+    from dotenv import load_dotenv # Importar para cargar .env
+    from pathlib import Path
+
+    # Cargar variables del archivo .env
+    load_dotenv(dotenv_path=Path(__file__).resolve().parents[1] / '.env')
 
     try:
         token = os.getenv("WIALON_TOKEN")
         if not token:
-            raise ValueError("La variable de entorno WIALON_TOKEN no está configurada.")
-
-        client = WialonClient(token)
+            raise ValueError("La variable de entorno WIALON_TOKEN no está configurada. Asegúrate de tener un archivo .env o la variable exportada.")
         
-        # Ejemplo: Obtener todas las unidades
-        unidades = client.get_unit_ids()
-        for unidad in unidades:
-            print(f"Unidad: {unidad['nombre']} (ID: {unidad['id']})")
-            kilometraje = client.get_unit_mileage(unidad['id'])
-            if kilometraje is not None:
-                print(f"  Kilometraje: {kilometraje} km")
+        base_url_from_env = os.getenv("WIALON_BASE_URL") 
 
-        # Ejemplo: Obtener una unidad específica por matrícula
-        unidad_especifica = client.get_unit_ids("4959MXM")
-        if unidad_especifica:
-            print(f"\nUnidad 4959MXM: {unidad_especifica[0]['nombre']} (ID: {unidad_especifica[0]['id']})")
-            kilometraje_mat = client.get_unit_mileage(unidad_especifica[0]['id'])
-            if kilometraje_mat is not None:
-                print(f"  Kilometraje: {kilometraje_mat} km")
+        with WialonClient(token, base_url=base_url_from_env) as client:
+            unidades = client.get_unit_ids()
+            for unidad in unidades:
+                logger.info(f"Unidad: {unidad['nombre']} (ID: {unidad['id']})")
+                kilometraje = client.get_unit_mileage(unidad['id'])
+                if kilometraje is not None:
+                    logger.info(f"  Kilometraje: {kilometraje} km")
 
     except WialonAPIError as e:
-        print(f"Error de la API de Wialon: {e}")
+        logger.error(f"Error de la API de Wialon: {e}")
     except ValueError as e:
-        print(f"Error de configuración: {e}")
+        logger.error(f"Error de configuración: {e}")
     except Exception as e:
-        print(f"Ocurrió un error inesperado: {e}")
+        logger.error(f"Ocurrió un error inesperado: {e}")
 
 Uso (desde línea de comandos):
-    python wialon_client.py -m 4959MXM
+    python -m wialon_api_client.client -m 4959MXM
     Si no se especifica la matrícula, se listan todas las unidades.
 
 Notas:
-    - El token de autenticación de Wialon debe configurarse mediante la variable de entorno 'WIALON_TOKEN'.
+    - El token de autenticación de Wialon debe configurarse mediante la variable de entorno 'WIALON_TOKEN', preferiblemente en un archivo .env.
+    - La URL base de la API de Wialon puede configurarse como 'WIALON_BASE_URL' en .env.
     - El kilometraje se obtiene en la unidad que Wialon proporciona (puede ser en decímetros o kilómetros).
     - Este módulo es un ejemplo básico y puede necesitar ajustes según tu caso de uso específico.
     - Se recomienda implementar un sistema de logging más robusto para entornos de producción.
@@ -59,15 +60,14 @@ import argparse
 import os
 from dotenv import load_dotenv
 from pathlib import Path
+from covi_logger import get_logger
 
-# --- Configuración global ---
 # Cargar variables de entorno desde el archivo .env
-# Se especifica la ruta al archivo .env que está en el directorio padre del script.
-# Esto es crucial cuando el script se ejecuta desde un subdirectorio.
 load_dotenv(dotenv_path=Path(__file__).resolve().parents[1] / '.env')
 
-WIALON_TOKEN = os.getenv("WIALON_TOKEN")
-BASE_URL = os.getenv("BASE_URL")
+# Inicializar el logger al inicio del módulo
+logger = get_logger(__name__)
+
 
 # --- Clases de Excepción Personalizadas ---
 class WialonAPIError(Exception):
@@ -91,12 +91,30 @@ class WialonClient:
     """
     Cliente para interactuar con la API de Wialon.
     Gestiona la sesión y las llamadas a la API.
+
+    Implementa el protocolo de gestor de contexto (__enter__ y __exit__)
+    para asegurar el login y el logout de la sesión de Wialon.
     """
-    def __init__(self, token: str):
+    DEFAULT_BASE_URL = "https://hst-api.wialon.com/wialon/ajax.html"
+
+    def __init__(self, token: str, base_url: str = None):
         if not token:
+            logger.error("El token de Wialon no puede estar vacío al inicializar WialonClient.")
             raise ValueError("El token de Wialon no puede estar vacío.")
         self.token = token
         self._sid = None # Almacenará el Session ID
+        self.base_url = base_url if base_url else self.DEFAULT_BASE_URL
+        logger.info(f"WialonClient inicializado con BASE_URL: {self.base_url}")
+
+    def __enter__(self):
+        """Método de entrada del gestor de contexto. Realiza el login."""
+        self.login()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Método de salida del gestor de contexto. Realiza el logout."""
+        self.logout()
+        # Si __exit__ devuelve True, suprime la excepción. Aquí no la suprimimos.
 
     def _call_api(self, service: str, params: dict) -> dict:
         """
@@ -111,22 +129,27 @@ class WialonClient:
             full_params["sid"] = self._sid
 
         try:
-            response = requests.get(BASE_URL, params=full_params)
+            logger.debug(f"Realizando llamada a Wialon API: {service} con params: {params}")
+            response = requests.get(self.base_url, params=full_params)
             response.raise_for_status() # Lanza una excepción para errores HTTP (4xx o 5xx)
             data = response.json()
 
             if "error" in data:
                 error_code = data.get('error', 'N/A')
                 error_msg = f"API Error {error_code}: {service} - {data.get('reason', 'Unknown error')}"
+                logger.error(error_msg)
                 if service == "token/login":
                     raise WialonAuthError(error_msg)
                 else:
                     raise WialonAPIError(error_msg)
             
+            logger.debug(f"Respuesta exitosa de {service}: {data}")
             return data
         except requests.exceptions.RequestException as e:
+            logger.error(f"Error de conexión al llamar a {service}: {e}")
             raise WialonRequestError(f"Error de conexión al llamar a {service}: {e}")
         except json.JSONDecodeError:
+            logger.error(f"Error al decodificar la respuesta JSON de {service}: {response.text}")
             raise WialonDataError(f"Error al decodificar la respuesta JSON de {service}: {response.text}")
 
     def login(self) -> str:
@@ -134,14 +157,19 @@ class WialonClient:
         Inicia sesión en la API de Wialon y obtiene un Session ID (sid).
         El sid se guarda en la instancia del cliente.
         """
-        print("Obteniendo SID...")
+        if self._sid:
+            logger.info("Ya hay una sesión activa. Reutilizando SID.")
+            return self._sid
+        
+        logger.info("Obteniendo SID...")
         data = self._call_api("token/login", {"token": self.token})
         
         if "eid" in data:
             self._sid = data["eid"]
-            print(f"SID obtenido exitosamente: {self._sid}")
+            logger.info(f"SID obtenido exitosamente: {self._sid}")
             return self._sid
         else:
+            logger.error("Respuesta inesperada al obtener SID: 'eid' no encontrado.")
             raise WialonAuthError("Respuesta inesperada al obtener SID: 'eid' no encontrado.")
 
     def logout(self):
@@ -149,15 +177,17 @@ class WialonClient:
         Cierra la sesión actual de Wialon.
         """
         if self._sid:
-            print("Cerrando sesión de Wialon...")
+            logger.info("Cerrando sesión de Wialon...")
             try:
                 self._call_api("core/logout", {})
                 self._sid = None
-                print("Sesión cerrada exitosamente.")
+                logger.info("Sesión cerrada exitosamente.")
             except WialonAPIError as e:
-                print(f"Advertencia: No se pudo cerrar la sesión: {e}")
+                logger.warning(f"Advertencia al cerrar sesión: {e}")
+            except Exception as e:
+                logger.error(f"Error inesperado al intentar cerrar sesión: {e}")
         else:
-            print("No hay sesión activa para cerrar.")
+            logger.debug("No hay sesión activa para cerrar.") # Usar debug para evitar spam
 
     def ensure_sid(self):
         """Asegura que hay un SID válido. Si no lo hay, intenta iniciar sesión."""
@@ -170,8 +200,8 @@ class WialonClient:
         Puedes usar '*' para obtener todas o un patrón como '*4959MXM*' para filtrar.
         Retorna una lista de diccionarios con 'nombre' e 'id'.
         """
-        self.ensure_sid()
-        print(f"Buscando unidades con máscara: '{unit_name_mask}'")
+        self.ensure_sid() 
+        logger.info(f"Buscando unidades con máscara: '{unit_name_mask}'")
 
         params_search = {
             "spec": {
@@ -189,9 +219,10 @@ class WialonClient:
 
         if "items" in data:
             unidades = [{"nombre": item["nm"], "id": item["id"]} for item in data["items"]]
-            print(f"Se encontraron {len(unidades)} unidades.")
+            logger.info(f"Se encontraron {len(unidades)} unidades.")
             return unidades
         else:
+            logger.error("Respuesta inesperada al buscar unidades: 'items' no encontrado.")
             raise WialonDataError("Respuesta inesperada al buscar unidades: 'items' no encontrado.")
 
     def get_unit_mileage(self, item_id: int) -> float | None:
@@ -199,8 +230,8 @@ class WialonClient:
         Obtiene el kilometraje (cnm_km) de una unidad específica.
         Retorna el kilometraje como un número flotante o None si no está disponible.
         """
-        self.ensure_sid()
-        print(f"Obteniendo kilometraje para ID: {item_id}")
+        self.ensure_sid() 
+        logger.info(f"Obteniendo kilometraje para ID: {item_id}")
 
         params_get_item = {
             "id": item_id,
@@ -210,20 +241,11 @@ class WialonClient:
 
         if "item" in data and "cnm_km" in data["item"]:
             kilometraje_api = data["item"]["cnm_km"]
-            # Aquí podrías añadir tu lógica de conversión específica si es necesaria.
-            # Por ejemplo, si sabes que Wialon a veces devuelve decímetros:
-            # return float(kilometraje_api) / 10 if some_condition else float(kilometraje_api)
-            print(f"  Kilometraje obtenido: {kilometraje_api} km")
+            logger.info(f"  Kilometraje obtenido: {kilometraje_api} km")
             return float(kilometraje_api)
         else:
-            print(f"  No se encontró 'cnm_km' para el ID {item_id}. Respuesta: {data.get('item', 'N/A')}")
+            logger.warning(f"  No se encontró 'cnm_km' para el ID {item_id}. Respuesta: {data.get('item', 'N/A')}")
             return None # Retorna None si el kilometraje no está en la respuesta
-
-    def __del__(self):
-        """
-        Método destructor para cerrar la sesión al eliminar el objeto WialonClient.
-        """
-        self.logout()
 
 
 # --- Lógica principal para ejecutar desde línea de comandos ---
@@ -241,51 +263,50 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if not WIALON_TOKEN:
-        print("Error: La variable de entorno 'WIALON_TOKEN' no está configurada.")
-        print("Por favor, establece tu token de Wialon a través de la variable de entorno 'WIALON_TOKEN'.")
+    wialon_token = os.getenv("WIALON_TOKEN")
+    wialon_base_url = os.getenv("WIALON_BASE_URL")
+
+    if not wialon_token:
+        logger.error("Error: La variable de entorno 'WIALON_TOKEN' no está configurada.")
+        logger.error("Asegúrate de tener un archivo '.env' en el directorio raíz del proyecto con el formato:")
+        logger.error("  WIALON_TOKEN='TU_TOKEN_DE_AUTENTICACION_AQUI'")
+        logger.error("O exporta la variable en tu terminal: export WIALON_TOKEN='TU_TOKEN_AQUI'")
         exit(1)
 
     try:
-        # Crear una instancia del cliente Wialon
-        client = WialonClient(WIALON_TOKEN)
+        with WialonClient(token=wialon_token, base_url=wialon_base_url) as client:
+            nombre_unidad_mask = f"*{args.mat}*" if args.mat else "*"
+            
+            todas_mis_unidades = client.get_unit_ids(nombre_unidad_mask)
 
-        nombre_unidad_mask = f"*{args.mat}*" if args.mat else "*"
-        
-        # Obtener unidades
-        todas_mis_unidades = client.get_unit_ids(nombre_unidad_mask)
+            if not todas_mis_unidades:
+                logger.warning("No se encontraron unidades o hubo un error al obtenerlas.")
+                exit(1)
 
-        if not todas_mis_unidades:
-            print("No se encontraron unidades o hubo un error al obtenerlas.")
-            exit(1)
+            logger.info("\n--- Obteniendo kilometraje de cada unidad ---")
 
-        print("\n--- Obteniendo kilometraje de cada unidad ---")
+            for unidad in todas_mis_unidades:
+                logger.info(f"\nProcesando unidad: {unidad['nombre']} (ID: {unidad['id']})")
+                kilometraje = client.get_unit_mileage(unidad['id'])
 
-        for unidad in todas_mis_unidades:
-            print(f"\nProcesando unidad: {unidad['nombre']} (ID: {unidad['id']})")
-            kilometraje = client.get_unit_mileage(unidad['id'])
-
-            if kilometraje is not None:
-                print(f"  Kilometraje actual: {kilometraje} km")
-            else:
-                print(f"  No se pudo obtener el kilometraje para esta unidad.")
+                if kilometraje is not None:
+                    logger.info(f"  Kilometraje actual: {kilometraje} km")
+                else:
+                    logger.warning(f"  No se pudo obtener el kilometraje para esta unidad.")
 
     except WialonAuthError as e:
-        print(f"Error de autenticación con Wialon: {e}")
+        logger.error(f"Error de autenticación con Wialon: {e}")
         exit(1)
     except WialonRequestError as e:
-        print(f"Error de conexión a la API de Wialon: {e}")
+        logger.error(f"Error de conexión a la API de Wialon: {e}")
         exit(1)
     except WialonDataError as e:
-        print(f"Error de datos de la API de Wialon: {e}")
+        logger.error(f"Error de datos de la API de Wialon: {e}")
         exit(1)
     except ValueError as e:
-        print(f"Error de configuración: {e}")
+        logger.error(f"Error de configuración: {e}")
         exit(1)
     except Exception as e:
-        print(f"Ocurrió un error inesperado: {e}")
+        logger.critical(f"Ocurrió un error inesperado y crítico: {e}", exc_info=True) # exc_info=True para traceback
         exit(1)
-    finally:
-        # Asegurarse de que la sesión se cierra, incluso si hay errores
-        if 'client' in locals() and client._sid:
-            client.logout()
+
