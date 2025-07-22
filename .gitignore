@@ -1,0 +1,37 @@
+# .gitignore
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env*
+.env
+venv/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+.nox/
+.mypy_cache/
+.dmypy.json
+.vscode/
+
+
+# Entornos virtuales
+venv/
+.venv/
+env/
+.env/
+
+# Archivos de desarrollo y temporales
+*.log
+*.tmp
+*.swp
+*.bak
+
+# Si tienes archivos de configuración sensibles, ¡AÑÁDELOS AQUÍ!
+# ejemplo: 
+config.ini
+# ejemplo: 
+secretos.json

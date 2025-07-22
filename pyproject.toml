@@ -1,0 +1,27 @@
+# pyproject.toml
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wialon-api-client" # Nombre del paquete que se instalará con pip
+version = "0.1.0"
+authors = [
+  { name="Juan Antonio Cobo", email="cobojuanantonio@gmail.com" },
+]
+description = "Cliente Python para interactuar con la API de Wialon."
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "requests",
+]
+
+[project.urls]
+"Homepage" = "[https://juanantoniocobo.com](https://juanantoniocobo.com)" # Tu web como homepage
+"GitHub" = "[https://github.com/Covi/wialon_api_client](https://github.com/Covi/wialon_api_client)" # Enlace directo al repo
+"Bug Tracker" = "[https://github.com/Covi/wialon_api_client/issues](https://github.com/Covi/wialon_api_client/issues)"
