@@ -21,7 +21,7 @@ Un cliente Python modular y robusto para interactuar con la API de Wialon, dise√
 Puedes instalar este cliente directamente desde GitHub usando `pip`:
 
 ```bash
-pip install git+[https://github.com/Covi/wialon_api_client.git@main](https://github.com/Covi/wialon_api_client.git@main)
+pip install git+https://github.com/Covi/wialon_api_client.git@main
 ```
 
 ## Para Desarrollo
